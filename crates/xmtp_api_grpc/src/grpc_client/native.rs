@@ -63,7 +63,7 @@ pub(crate) fn apply_channel_options(endpoint: Endpoint, limit: u64) -> Endpoint 
         // Purpose: Configures the TCP keep-alive interval for the socket connection.
         // Functionality: This setting tells the operating system to send TCP keep-alive probes periodically when no data has been transferred over the connection within the specified interval.
         // Impact: Similar to the gRPC-level keep-alive, this helps keep the connection alive at the TCP layer and detect broken connections. It's particularly useful for detecting half-open connections and ensuring that resources are not wasted on unresponsive peers.
-        .tcp_keepalive(Some(Duration::from_secs(16)))
+        .tcp_keepalive(Some(Duration::from_secs(30)))
         // Purpose: Sets a maximum duration for the client to wait for a response to a request.
         // Functionality: If a response is not received within the specified timeout, the request is canceled and an error is returned.
         // Impact: This is critical for bounding the wait time for operations, which can enhance the predictability and reliability of client interactions by avoiding indefinitely hanging requests.
@@ -71,8 +71,15 @@ pub(crate) fn apply_channel_options(endpoint: Endpoint, limit: u64) -> Endpoint 
         // Purpose: Specifies how long the client will wait for a response to a keep-alive ping before considering the connection dead.
         // Functionality: If a ping response is not received within this duration, the connection is presumed to be lost and is closed.
         // Impact: This setting is crucial for quickly detecting unresponsive connections and freeing up resources associated with them. It ensures that the client has up-to-date information on the status of connections and can react accordingly.
-        .keep_alive_timeout(Duration::from_secs(10))
-        .http2_keep_alive_interval(Duration::from_secs(16))
+        //
+        // NOTE: keep the timeout generous. A 10s deadline was too aggressive for
+        // cross-cloud paths under load (e.g. Fly->AWS): a transiently-delayed PONG would
+        // make hyper drop a perfectly good connection, which tonic surfaces as
+        // `UNAVAILABLE` (status 14) and the retry layer then masks (see herald-lite #70).
+        // Detecting a truly-dead connection a little slower is the right trade; the stream
+        // watchdog (xmtp_mls) and a future server heartbeat cover the widened gap.
+        .keep_alive_timeout(Duration::from_secs(30))
+        .http2_keep_alive_interval(Duration::from_secs(30))
         .rate_limit(limit, Duration::from_secs(60))
 }
 
